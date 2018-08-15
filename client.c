@@ -11,7 +11,12 @@
 
 #define USERNAME "rharwood"
 #define PASSWORD "secretes"
-#define ENDPOINT "https://demo.yubico.com/wsapi/u2f/enroll?username=%s&password=%s"
+#define ORIGIN "https://demo.yubico.com"
+#define ENDPOINT "%s/wsapi/u2f/enroll?username=%s&password=%s"
+
+/* The library makes no guarantees about this, but this is what libu2f used
+ * internally when I looked. */
+#define MAX_REPLY_LEN 2048
 
 typedef struct {
     size_t len;
@@ -42,7 +47,7 @@ char *get_register_challenge(const char *username, const char *password) {
     int aret;
     CURLcode ret;
     CURL *curl;
-    char *out = NULL, *url = NULL, *p, *n, *end;
+    char *out = NULL, *url = NULL;
     buffer response = { 0 };
 
     ret = curl_global_init(CURL_GLOBAL_DEFAULT);
@@ -61,7 +66,7 @@ char *get_register_challenge(const char *username, const char *password) {
     if (ret)
         goto done;
 
-    aret = asprintf(&url, ENDPOINT, username, password);
+    aret = asprintf(&url, ENDPOINT, ORIGIN, username, password);
     if (aret == -1) {
         url = NULL;
         goto done;
@@ -75,24 +80,9 @@ char *get_register_challenge(const char *username, const char *password) {
     if (ret || !response.data)
         goto done;
 
-    printf("%s\n", response.data);
+    out = response.data;
+    response.data = NULL;
 
-    n = "\"challenge\"";
-    p = strstr(response.data, n);
-    if (!p)
-        goto done;
-
-    p += strlen(n);
-    while (*p == ':' || *p == ' ' || *p == '\t' || *p == '\r' || *p == '\n' ||
-           *p == '\v' || *p == '"')
-        p++;
-
-    end = strchr(p, '"');
-    if (!end)
-        goto done;
-    *end = '\0';
-
-    out = strdup(p);
 done:
     free(response.data);
     free(url);
@@ -104,7 +94,8 @@ int main() {
     u2fh_rc ret;
     u2fh_devs *devs = NULL;
     unsigned num_devices;
-    char *chal = NULL;
+    char *challenge = NULL, response[MAX_REPLY_LEN];
+    size_t response_len = MAX_REPLY_LEN;
 
     ret = u2fh_global_init(0); /* not enabling debug */
     if (ret)
@@ -139,11 +130,21 @@ int main() {
 
     assert(num_devices == 1 && "TODO");
 
-    chal = get_register_challenge(USERNAME, PASSWORD);
-    printf("%s\n", chal);
+    challenge = get_register_challenge(USERNAME, PASSWORD);
+    if (!challenge) {
+        fprintf(stderr, "No challenge found!\n");
+        goto done;
+    }
+
+    ret = u2fh_register2(devs, challenge, ORIGIN, response, &response_len,
+                         U2FH_REQUEST_USER_PRESENCE);
+    if (ret)
+        goto done;
+
+    printf("%s\n", response);
 
 done:
-    free(chal);
+    free(challenge);
     u2fh_devs_done(devs);
     u2fh_global_done();
 
