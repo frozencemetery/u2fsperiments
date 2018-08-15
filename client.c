@@ -43,12 +43,9 @@ size_t write_callback(char *data, size_t size, size_t nmemb, void *userdata) {
     return bytes;
 }
 
-char *get_register_challenge(const char *username, const char *password) {
-    int aret;
+CURL *setup_curl(buffer *buf) {
     CURLcode ret;
     CURL *curl;
-    char *out = NULL, *url = NULL;
-    buffer response = { 0 };
 
     ret = curl_global_init(CURL_GLOBAL_DEFAULT);
     if (ret)
@@ -58,13 +55,26 @@ char *get_register_challenge(const char *username, const char *password) {
     if (!curl)
         goto done;
 
-    ret = curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
+    ret = curl_easy_setopt(curl, CURLOPT_WRITEDATA, buf);
     if (ret)
         goto done;
 
     ret = curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
     if (ret)
         goto done;
+
+    return curl;
+
+done:
+    curl_easy_cleanup(curl);
+    return NULL;
+}
+
+char *get_register_challenge(CURL *curl, buffer *buf, const char *username,
+                             const char *password) {
+    int aret;
+    CURLcode ret;
+    char *out = NULL, *url = NULL;
 
     aret = asprintf(&url, ENDPOINT, ORIGIN, username, password);
     if (aret == -1) {
@@ -77,25 +87,32 @@ char *get_register_challenge(const char *username, const char *password) {
         goto done;
 
     ret = curl_easy_perform(curl);
-    if (ret || !response.data)
+    if (ret || !buf->data)
         goto done;
 
-    out = response.data;
-    response.data = NULL;
+    out = buf->data;
+    buf->data = NULL;
 
 done:
-    free(response.data);
+    free(buf->data);
+    buf->data = NULL;
+    buf->len = 0;
     free(url);
-    curl_easy_cleanup(curl);
     return out;
 }
 
 int main() {
+    CURL *curl = NULL;
+    buffer buf = { 0 };
     u2fh_rc ret;
     u2fh_devs *devs = NULL;
     unsigned num_devices;
     char *challenge = NULL, response[MAX_REPLY_LEN];
     size_t response_len = MAX_REPLY_LEN;
+
+    curl = setup_curl(&buf);
+    if (!curl)
+        goto done;
 
     ret = u2fh_global_init(0); /* not enabling debug */
     if (ret)
@@ -130,11 +147,13 @@ int main() {
 
     assert(num_devices == 1 && "TODO");
 
-    challenge = get_register_challenge(USERNAME, PASSWORD);
+    challenge = get_register_challenge(curl, &buf, USERNAME, PASSWORD);
     if (!challenge) {
         fprintf(stderr, "No challenge found!\n");
         goto done;
     }
+
+    printf("PUSH BLINKY TO REGISTER\n");
 
     ret = u2fh_register2(devs, challenge, ORIGIN, response, &response_len,
                          U2FH_REQUEST_USER_PRESENCE);
@@ -147,6 +166,7 @@ done:
     free(challenge);
     u2fh_devs_done(devs);
     u2fh_global_done();
+    curl_easy_cleanup(curl);
 
     fprintf(stderr, "%s: %s\n", u2fh_strerror_name(ret), u2fh_strerror(ret));
     return ret;
