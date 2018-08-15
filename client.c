@@ -12,7 +12,8 @@
 #define USERNAME "rharwood"
 #define PASSWORD "secretes"
 #define ORIGIN "https://demo.yubico.com"
-#define ENDPOINT "%s/wsapi/u2f/enroll?username=%s&password=%s"
+#define REG_ENDPOINT "%s/wsapi/u2f/enroll?username=%s&password=%s"
+#define BIND_ENDPOINT "%s/wsapi/u2f/bind?username=%s&password=%s&data=%s"
 
 /* The library makes no guarantees about this, but this is what libu2f used
  * internally when I looked. */
@@ -76,7 +77,7 @@ char *get_register_challenge(CURL *curl, buffer *buf, const char *username,
     CURLcode ret;
     char *out = NULL, *url = NULL;
 
-    aret = asprintf(&url, ENDPOINT, ORIGIN, username, password);
+    aret = asprintf(&url, REG_ENDPOINT, ORIGIN, username, password);
     if (aret == -1) {
         url = NULL;
         goto done;
@@ -101,13 +102,51 @@ done:
     return out;
 }
 
+char *process_response(CURL *curl, buffer *buf, const char *response,
+                       size_t response_len, const char *username,
+                       const char *password) {
+    int aret;
+    CURLcode ret;
+    char *out = NULL, *url = NULL, *safe_data = NULL;;
+
+    safe_data = curl_easy_escape(curl, response, response_len);
+    if (!safe_data)
+        goto done;
+
+    aret = asprintf(&url, BIND_ENDPOINT, ORIGIN, username, password,
+                    safe_data);
+    if (aret == -1) {
+        url = NULL;
+        goto done;
+    }
+
+    ret = curl_easy_setopt(curl, CURLOPT_URL, url);
+    if (ret)
+        goto done;
+
+    ret = curl_easy_perform(curl);
+    if (ret || !buf->data)
+        goto done;
+
+    out = buf->data;
+    buf->data = NULL;
+
+done:
+    free(buf->data);
+    buf->data = NULL;
+    buf->len = 0;
+    free(url);
+    curl_free(safe_data);
+    return out;
+}
+
 int main() {
     CURL *curl = NULL;
     buffer buf = { 0 };
     u2fh_rc ret;
     u2fh_devs *devs = NULL;
     unsigned num_devices;
-    char *challenge = NULL, response[MAX_REPLY_LEN];
+    char *challenge = NULL, response[MAX_REPLY_LEN], *s = NULL;
     size_t response_len = MAX_REPLY_LEN;
 
     curl = setup_curl(&buf);
@@ -145,8 +184,6 @@ int main() {
         printf("%s\n", buf);
     }
 
-    assert(num_devices == 1 && "TODO");
-
     challenge = get_register_challenge(curl, &buf, USERNAME, PASSWORD);
     if (!challenge) {
         fprintf(stderr, "No challenge found!\n");
@@ -160,7 +197,12 @@ int main() {
     if (ret)
         goto done;
 
-    printf("%s\n", response);
+    s = process_response(curl, &buf, response, response_len,USERNAME,
+                         PASSWORD);
+    if (!s)
+        goto done;
+    printf("%s\n", s);
+    free(s);
 
 done:
     free(challenge);
