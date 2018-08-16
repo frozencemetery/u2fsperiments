@@ -73,13 +73,13 @@ done:
     return NULL;
 }
 
-char *get_register_challenge(CURL *curl, buffer *buf, const char *username,
-                             const char *password) {
+char *get_challenge(CURL *curl, buffer *buf, const char *username,
+                    const char *password, const char *endpoint) {
     int aret;
     CURLcode ret;
     char *out = NULL, *url = NULL;
 
-    aret = asprintf(&url, REG_ENDPOINT, ORIGIN, username, password);
+    aret = asprintf(&url, endpoint, ORIGIN, username, password);
     if (aret == -1) {
         url = NULL;
         goto done;
@@ -95,38 +95,6 @@ char *get_register_challenge(CURL *curl, buffer *buf, const char *username,
 
     out = buf->data;
     buf->data = NULL;
-
-done:
-    free(buf->data);
-    buf->data = NULL;
-    buf->len = 0;
-    free(url);
-    return out;
-}
-
-char *get_sign_challenge(CURL *curl, buffer *buf, const char *username,
-                         const char *password) {
-    int aret;
-    CURLcode ret;
-    char *out = NULL, *url = NULL;
-
-    aret = asprintf(&url, SIGN_ENDPOINT, ORIGIN, username, password);
-    if (aret == -1) {
-        url = NULL;
-        goto done;
-    }
-
-    ret = curl_easy_setopt(curl, CURLOPT_URL, url);
-    if (ret)
-        goto done;
-
-    ret = curl_easy_perform(curl);
-    if (ret || !buf->data)
-        goto done;
-
-    out = buf->data;
-    buf->data = NULL;
-
 done:
     free(buf->data);
     buf->data = NULL;
@@ -136,8 +104,8 @@ done:
 }
 
 char *send_msg(CURL *curl, buffer *buf, const char *response,
-                    size_t response_len, const char *username,
-                    const char *password, const char *endpoint) {
+               size_t response_len, const char *username,
+               const char *password, const char *endpoint) {
     int aret;
     CURLcode ret;
     char *out = NULL, *url = NULL, *safe_data = NULL;
@@ -199,7 +167,7 @@ u2fh_devs *setup_u2f() {
     printf("Detected %d device(s)\n", num_devices);
 
     for (unsigned i = 0; i < num_devices; i++) {
-        size_t len = 128;
+        size_t len = 78;
         char buf[len];
         ret = u2fh_get_device_description(devs, i, buf, &len);
         if (ret)
@@ -234,7 +202,8 @@ int main(int argc, char *argv[]) {
         goto done;
 
     if (argc > 1 && *argv[1] == 'r') {
-        challenge = get_register_challenge(curl, &buf, USERNAME, PASSWORD);
+        challenge = get_challenge(curl, &buf, USERNAME, PASSWORD,
+                                  REG_ENDPOINT);
         if (!challenge) {
             fprintf(stderr, "No registration challenge found!\n");
             goto done;
@@ -258,7 +227,7 @@ int main(int argc, char *argv[]) {
     free(challenge);
     challenge = NULL;
 
-    challenge = get_sign_challenge(curl, &buf, USERNAME, PASSWORD);
+    challenge = get_challenge(curl, &buf, USERNAME, PASSWORD, SIGN_ENDPOINT);
     if (!challenge) {
         fprintf(stderr, "No signature challenge found!\n");
         goto done;
