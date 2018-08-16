@@ -14,6 +14,8 @@
 #define ORIGIN "https://demo.yubico.com"
 #define REG_ENDPOINT "%s/wsapi/u2f/enroll?username=%s&password=%s"
 #define BIND_ENDPOINT "%s/wsapi/u2f/bind?username=%s&password=%s&data=%s"
+#define SIGN_ENDPOINT "%s/wsapi/u2f/sign?username=%s&password=%s"
+#define VERIFY_ENDPOINT "%s/wsapi/u2f/verify?username=%s&password=%s&data=%s"
 
 /* The library makes no guarantees about this, but this is what libu2f used
  * internally when I looked. */
@@ -102,18 +104,49 @@ done:
     return out;
 }
 
-char *process_response(CURL *curl, buffer *buf, const char *response,
-                       size_t response_len, const char *username,
-                       const char *password) {
+char *get_sign_challenge(CURL *curl, buffer *buf, const char *username,
+                         const char *password) {
     int aret;
     CURLcode ret;
-    char *out = NULL, *url = NULL, *safe_data = NULL;;
+    char *out = NULL, *url = NULL;
+
+    aret = asprintf(&url, SIGN_ENDPOINT, ORIGIN, username, password);
+    if (aret == -1) {
+        url = NULL;
+        goto done;
+    }
+
+    ret = curl_easy_setopt(curl, CURLOPT_URL, url);
+    if (ret)
+        goto done;
+
+    ret = curl_easy_perform(curl);
+    if (ret || !buf->data)
+        goto done;
+
+    out = buf->data;
+    buf->data = NULL;
+
+done:
+    free(buf->data);
+    buf->data = NULL;
+    buf->len = 0;
+    free(url);
+    return out;
+}
+
+char *send_msg(CURL *curl, buffer *buf, const char *response,
+                    size_t response_len, const char *username,
+                    const char *password, const char *endpoint) {
+    int aret;
+    CURLcode ret;
+    char *out = NULL, *url = NULL, *safe_data = NULL;
 
     safe_data = curl_easy_escape(curl, response, response_len);
     if (!safe_data)
         goto done;
 
-    aret = asprintf(&url, BIND_ENDPOINT, ORIGIN, username, password,
+    aret = asprintf(&url, endpoint, ORIGIN, username, password,
                     safe_data);
     if (aret == -1) {
         url = NULL;
@@ -140,18 +173,10 @@ done:
     return out;
 }
 
-int main() {
-    CURL *curl = NULL;
-    buffer buf = { 0 };
-    u2fh_rc ret;
+u2fh_devs *setup_u2f() {
     u2fh_devs *devs = NULL;
+    u2fh_rc ret;
     unsigned num_devices;
-    char *challenge = NULL, response[MAX_REPLY_LEN], *s = NULL;
-    size_t response_len = MAX_REPLY_LEN;
-
-    curl = setup_curl(&buf);
-    if (!curl)
-        goto done;
 
     ret = u2fh_global_init(0); /* not enabling debug */
     if (ret)
@@ -181,28 +206,78 @@ int main() {
             goto done;
 
         buf[len] = '\0';
-        printf("%s\n", buf);
+        printf("Device %d: %s\n", i, buf);
     }
 
-    challenge = get_register_challenge(curl, &buf, USERNAME, PASSWORD);
+    return devs;
+
+done:
+    u2fh_devs_done(devs);
+    fprintf(stderr, "%s: %s\n", u2fh_strerror_name(ret), u2fh_strerror(ret));
+    return NULL;
+}
+
+int main(int argc, char *argv[]) {
+    CURL *curl = NULL;
+    buffer buf = { 0 };
+    u2fh_rc ret;
+    u2fh_devs *devs = NULL;
+    char *challenge = NULL, response[MAX_REPLY_LEN], *cert = NULL;
+    size_t response_len = MAX_REPLY_LEN;
+
+    curl = setup_curl(&buf);
+    if (!curl)
+        goto done;
+
+    devs = setup_u2f();
+    if (!devs)
+        goto done;
+
+    if (argc > 1 && *argv[1] == 'r') {
+        challenge = get_register_challenge(curl, &buf, USERNAME, PASSWORD);
+        if (!challenge) {
+            fprintf(stderr, "No registration challenge found!\n");
+            goto done;
+        }
+
+        printf("PUSH BLINKY TO REGISTER\n");
+
+        ret = u2fh_register2(devs, challenge, ORIGIN, response, &response_len,
+                             U2FH_REQUEST_USER_PRESENCE);
+        if (ret)
+            goto done;
+
+        cert = send_msg(curl, &buf, response, response_len, USERNAME,
+                        PASSWORD, BIND_ENDPOINT);
+        if (!cert)
+            goto done;
+        printf("%s\n", cert);
+        free(cert);
+    }
+
+    free(challenge);
+    challenge = NULL;
+
+    challenge = get_sign_challenge(curl, &buf, USERNAME, PASSWORD);
     if (!challenge) {
-        fprintf(stderr, "No challenge found!\n");
+        fprintf(stderr, "No signature challenge found!\n");
         goto done;
     }
 
-    printf("PUSH BLINKY TO REGISTER\n");
+    printf("PUSH BLINKY TO SIGN\n");
 
-    ret = u2fh_register2(devs, challenge, ORIGIN, response, &response_len,
-                         U2FH_REQUEST_USER_PRESENCE);
+    response_len = MAX_REPLY_LEN;
+    ret = u2fh_authenticate2(devs, challenge, ORIGIN, response, &response_len,
+                             U2FH_REQUEST_USER_PRESENCE);
     if (ret)
         goto done;
 
-    s = process_response(curl, &buf, response, response_len,USERNAME,
-                         PASSWORD);
-    if (!s)
+    cert = send_msg(curl, &buf, response, response_len, USERNAME, PASSWORD,
+                    VERIFY_ENDPOINT);
+    if (!cert)
         goto done;
-    printf("%s\n", s);
-    free(s);
+    printf("%s\n", cert);
+    free(cert);
 
 done:
     free(challenge);
@@ -210,6 +285,5 @@ done:
     u2fh_global_done();
     curl_easy_cleanup(curl);
 
-    fprintf(stderr, "%s: %s\n", u2fh_strerror_name(ret), u2fh_strerror(ret));
     return ret;
 }
