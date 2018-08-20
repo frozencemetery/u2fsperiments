@@ -44,6 +44,10 @@ u2fs_rc sign_loop(u2fs_ctx_t *ctx) {
     u2fs_auth_res_t *auth_res;
 
     while (1) {
+        ret = update_challenge(ctx);
+        if (ret)
+            goto done;
+
         ret = u2fs_authentication_challenge(ctx, &challenge);
         if (ret)
             goto done;
@@ -102,15 +106,15 @@ int main() {
     if (ret)
         goto done;
 
-    ret = update_challenge(ctx);
-    if (ret)
-        goto done;
-
     ret = u2fs_set_appid(ctx, "u2fsperiments");
     if (ret)
         goto done;
 
     ret = u2fs_set_origin(ctx, ORIGIN);
+    if (ret)
+        goto done;
+
+    ret = update_challenge(ctx);
     if (ret)
         goto done;
 
@@ -129,11 +133,7 @@ int main() {
     keyhandle = u2fs_get_registration_keyHandle(result);
     publickey = u2fs_get_registration_publicKey(result);
 
-    fprintf(stderr, "Token registered (no, but that's okay)\n");
-
-    ret = update_challenge(ctx);
-    if (ret)
-        goto done;
+    fprintf(stderr, "Token registered (for this server session)\n");
 
     free(challenge);
     challenge = NULL;

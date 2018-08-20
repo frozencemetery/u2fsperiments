@@ -51,7 +51,7 @@ done:
     return NULL;
 }
 
-u2fh_rc sign_loop(u2fh_devs *devs) {
+static u2fh_rc sign_loop(u2fh_devs *devs) {
     u2fh_rc ret;
     char *challenge = NULL;
     char response[MAX_REPLY_LEN];
@@ -81,17 +81,12 @@ u2fh_rc sign_loop(u2fh_devs *devs) {
     }
 }
 
-int main() {
-    u2fh_rc ret;
-    u2fh_devs *devs = NULL;
+static u2fh_rc register_device(u2fh_devs *devs) {
+    u2fh_rc ret = 0;
     char *challenge = NULL;
     char response[MAX_REPLY_LEN];
     size_t response_len = MAX_REPLY_LEN;
-
-    devs = setup_u2f();
-    if (!devs)
-        goto done;
-
+    
     challenge = get();
 
     fprintf(stderr, "PUSH BLINKY TO REGISTER\n");
@@ -104,10 +99,26 @@ int main() {
 
     put(response);
 
+done:
+    free(challenge);
+    return ret;
+}
+
+int main() {
+    u2fh_rc ret;
+    u2fh_devs *devs = NULL;
+
+    devs = setup_u2f();
+    if (!devs)
+        goto done;
+
+    ret = register_device(devs);
+    if (ret)
+        goto done;
+
     ret = sign_loop(devs);
 
 done:
-    free(challenge);
     u2fh_devs_done(devs);
     u2fh_global_done();
 
