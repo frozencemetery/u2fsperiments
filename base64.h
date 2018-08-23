@@ -42,3 +42,10 @@
 /* base64-encode data and return it in an allocated buffer.  Return NULL if out
  * of memory. */
 char *base64_encode(const void *data, size_t len);
+
+/*
+ * Decode str as base64 and return the result in an allocated buffer, setting
+ * *len_out to the length.  Return NULL and *len_out == 0 if out of memory,
+ * NULL and *len_out == SIZE_MAX on invalid input.
+ */
+void *base64_decode(const char *str, size_t *len_out);
