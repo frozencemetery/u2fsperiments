@@ -6,17 +6,11 @@
 #include <fido.h>
 #include <fido/err.h>
 
+#include "base64.h"
 #include "common.h"
 
 /* Why do I even have to specify this.  It's just calling malloc anyway. */
 #define MAX_DEVS 64
-
-static const unsigned char challenge[32] = {
-    0xf9, 0x64, 0x57, 0xe7, 0x2d, 0x97, 0xf6, 0xbb,
-    0xdd, 0xd7, 0xfb, 0x06, 0x37, 0x62, 0xea, 0x26,
-    0x20, 0x44, 0x8e, 0x69, 0x7c, 0x03, 0xf2, 0x31,
-    0x2f, 0x99, 0xdc, 0xaf, 0x3e, 0x8a, 0x91, 0x6b,
-};
 
 static fido_dev_t *setup_u2f() {
     fido_dev_info_t *devlist = NULL;
@@ -69,7 +63,20 @@ done:
 
 static int chal(fido_dev_t *dev) {
     fido_cred_t *cred = NULL;
+    char *chal_64 = NULL;
+    unsigned char *chal_dec = NULL;
+    size_t len_out;
     int ret = 0;
+
+    chal_64 = get();
+    if (!chal_64)
+        goto done;
+
+    chal_dec = base64_decode(chal_64, &len_out);
+    if (!chal_dec) {
+        fprintf(stderr, "base64 challenge decode failed!\n");
+        goto done;
+    }
 
     cred = fido_cred_new();
     if (cred == NULL)
@@ -79,7 +86,7 @@ static int chal(fido_dev_t *dev) {
     if (ret != FIDO_OK)
         goto done;
     
-    ret = fido_cred_set_clientdata_hash(cred, challenge, sizeof(challenge));
+    ret = fido_cred_set_clientdata_hash(cred, chal_dec, len_out);
     if (ret != FIDO_OK)
         goto done;
 
@@ -94,9 +101,12 @@ static int chal(fido_dev_t *dev) {
         goto done;
 
 done:
+    free(chal_64);
+    free(chal_dec);
+    fido_cred_free(&cred);
+
     if (ret != FIDO_OK)
         fprintf(stderr, "libfido2: %s\n", fido_strerr(ret));
-    fido_cred_free(&cred);
     return ret;
 }
 
