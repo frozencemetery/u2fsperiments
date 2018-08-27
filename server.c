@@ -42,7 +42,9 @@ static int send_challenge(fido_cred_t *cred) {
     return 0;
 }
 
-static int verify_reg(fido_cred_t *cred) {
+/* Registration expects a cert to be supplied in the datastream. */
+static int verify(fido_cred_t *cred, unsigned char **cert_out,
+                  size_t *cert_len_out) {
     char *blob = NULL;
     char *fmt, *cert_64, *authdata_64, *sig_64;
     unsigned char *cert = NULL, *authdata = NULL, *sig = NULL;
@@ -67,25 +69,32 @@ static int verify_reg(fido_cred_t *cred) {
     *blob++ = '\0';
     sig_64 = blob;
 
-    blob = strchr(blob, ' ');
-    if (blob == NULL)
-        goto done;
-    *blob++ = '\0';
-    cert_64 = blob;
+    if (cert_out != NULL) {
+        blob = strchr(blob, ' ');
+        if (blob == NULL)
+            goto done;
+        *blob++ = '\0';
+        cert_64 = blob;
 
-    cert = base64_decode(cert_64, &cert_len);
+        cert = base64_decode(cert_64, &cert_len);
+        if (cert == NULL)
+            goto done;
+    }
+
     authdata = base64_decode(authdata_64, &authdata_len);
     sig = base64_decode(sig_64, &sig_len);
-    if (cert == NULL || authdata == NULL || sig == NULL)
+    if (authdata == NULL || sig == NULL)
         goto done;
 
     ret = fido_cred_set_fmt(cred, fmt);
     if (ret != FIDO_OK)
         goto done;
 
-    ret = fido_cred_set_x509(cred, cert, cert_len);
-    if (ret != FIDO_OK)
-        goto done;
+    if (cert_out != NULL) {
+        ret = fido_cred_set_x509(cred, cert, cert_len);
+        if (ret != FIDO_OK)
+            goto done;
+    }
 
     ret = fido_cred_set_authdata(cred, authdata, authdata_len);
     if (ret != FIDO_OK)
@@ -99,7 +108,15 @@ static int verify_reg(fido_cred_t *cred) {
     if (ret != FIDO_OK)
         goto done;
 
-    fprintf(stderr, "CRED VERIFIED EVERYBODY PARTY\n");
+    fprintf(stderr, "REGISTRATION COMPLETE (and verified)\n");
+
+    if (cert_out != NULL) {
+        *cert_len_out = cert_len;
+        *cert_out = malloc(cert_len);
+        if (*cert_out != NULL)
+            memcpy(*cert_out, cert, cert_len);
+        cert = NULL;
+    }
 
 done:
     if (ret != FIDO_OK)
@@ -112,11 +129,18 @@ done:
     return ret;
 }
 
-int main() {
-    int ret;
-    fido_cred_t *cred = NULL;
+static int verify_reg(fido_cred_t *cred, unsigned char **cert_out,
+                      size_t *cert_len_out) {
+    return verify(cred, cert_out, cert_len_out);
+}
 
-    fido_init(0);
+static int verify_sig(fido_cred_t *cred) {
+    return verify(cred, NULL, NULL);
+}
+
+static fido_cred_t *new_cred() {
+    fido_cred_t *cred;
+    int ret;
 
     cred = fido_cred_new();
     if (cred == NULL)
@@ -127,19 +151,53 @@ int main() {
         goto done;
 
     ret = fido_cred_set_type(cred, COSE_ES256);
+
+done:
     if (ret != FIDO_OK)
+        fido_cred_free(&cred);
+    return cred;
+}
+
+int main() {
+    int ret;
+    fido_cred_t *cred = NULL;
+    unsigned char *cert = NULL;
+    size_t cert_len;
+
+    fido_init(0);
+
+    cred = new_cred();
+    if (cred == NULL)
         goto done;
 
     ret = send_challenge(cred);
     if (ret != 0)
         goto done;
 
-    ret = verify_reg(cred);
+    ret = verify_reg(cred, &cert, &cert_len);
+    if (ret != 0 || cert == NULL)
+        goto done;
+
+    fido_cred_free(&cred);
+    cred = new_cred();
+    if (cred == NULL)
+        goto done;
+
+    ret = send_challenge(cred);
+    if (ret != 0)
+        goto done;
+
+    ret = fido_cred_set_x509(cred, cert, cert_len);
+    if (ret != FIDO_OK)
+        goto done;
+
+    ret = verify_sig(cred);
     if (ret != 0)
         goto done;
 
     ret = 0;
 done:
+    free(cert);
     fido_cred_free(&cred);
     return ret;
 }

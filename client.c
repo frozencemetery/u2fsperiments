@@ -1,5 +1,6 @@
 /* Copyright (C) 2018 The u2fsperiments contributors */
 
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -61,7 +62,7 @@ done:
     return dev;
 }
 
-static int chal(fido_dev_t *dev) {
+static int chal(fido_dev_t *dev, bool is_reg) {
     fido_cred_t *cred = NULL;
     char *chal_64 = NULL, *cert_64 = NULL, *authdata_64 = NULL,
         *sig_64 = NULL;
@@ -103,11 +104,6 @@ static int chal(fido_dev_t *dev) {
     if (ret != FIDO_OK)
         goto done;
 
-    cert = fido_cred_x5c_ptr(cred);
-    cert_64 = base64_encode(cert, fido_cred_x5c_len(cred));
-    if (!cert_64)
-        goto done;
-
     authdata = fido_cred_authdata_ptr(cred);
     authdata_64 = base64_encode(authdata, fido_cred_authdata_len(cred));
     if (!authdata_64)
@@ -118,8 +114,18 @@ static int chal(fido_dev_t *dev) {
     if (!sig_64)
         goto done;
 
-    ret = asprintf(&reply, "%s %s %s %s\n",
-                   fido_cred_fmt(cred), authdata_64, sig_64, cert_64);
+    if (is_reg) {
+        cert = fido_cred_x5c_ptr(cred);
+        cert_64 = base64_encode(cert, fido_cred_x5c_len(cred));
+        if (!cert_64)
+            goto done;
+
+        ret = asprintf(&reply, "%s %s %s %s\n",
+                       fido_cred_fmt(cred), authdata_64, sig_64, cert_64);
+    } else {
+        ret = asprintf(&reply, "%s %s %s\n",
+                       fido_cred_fmt(cred), authdata_64, sig_64);
+    }
     if (ret < 0) {
         reply = NULL;
         goto done;
@@ -150,9 +156,11 @@ int main() {
     if (!dev)
         goto done;
 
-    ret = chal(dev);
+    ret = chal(dev, true);
     if (ret)
         goto done;
+
+    ret = chal(dev, false);
 
 done:
     return ret;
