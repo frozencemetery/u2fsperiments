@@ -112,9 +112,7 @@ static int verify(fido_cred_t *cred, unsigned char **cert_out,
 
     if (cert_out != NULL) {
         *cert_len_out = cert_len;
-        *cert_out = malloc(cert_len);
-        if (*cert_out != NULL)
-            memcpy(*cert_out, cert, cert_len);
+        *cert_out = cert;
         cert = NULL;
     }
 

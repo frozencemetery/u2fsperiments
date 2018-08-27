@@ -163,5 +163,7 @@ int main() {
     ret = chal(dev, false);
 
 done:
+    fido_dev_close(dev);
+    fido_dev_free(&dev);
     return ret;
 }
