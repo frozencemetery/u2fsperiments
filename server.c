@@ -59,12 +59,6 @@ static int verify_reg(fido_cred_t *cred) {
     if (blob == NULL)
         goto done;
     *blob++ = '\0';
-    cert_64 = blob;
-
-    blob = strchr(blob, ' ');
-    if (blob == NULL)
-        goto done;
-    *blob++ = '\0';
     authdata_64 = blob;
 
     blob = strchr(blob, ' ');
@@ -72,6 +66,12 @@ static int verify_reg(fido_cred_t *cred) {
         goto done;
     *blob++ = '\0';
     sig_64 = blob;
+
+    blob = strchr(blob, ' ');
+    if (blob == NULL)
+        goto done;
+    *blob++ = '\0';
+    cert_64 = blob;
 
     cert = base64_decode(cert_64, &cert_len);
     authdata = base64_decode(authdata_64, &authdata_len);

@@ -119,7 +119,7 @@ static int chal(fido_dev_t *dev) {
         goto done;
 
     ret = asprintf(&reply, "%s %s %s %s\n",
-                   fido_cred_fmt(cred), cert_64, authdata_64, sig_64);
+                   fido_cred_fmt(cred), authdata_64, sig_64, cert_64);
     if (ret < 0) {
         reply = NULL;
         goto done;
