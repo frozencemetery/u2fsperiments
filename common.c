@@ -16,12 +16,15 @@ char *get() {
     if (buf == NULL)
         return NULL;
 
-    len = read(0, buf, MAX_REPLY_LEN);
+    len = read(0, buf, MAX_REPLY_LEN - 1);
     if (len <= 0) {
         free(buf);
         return NULL;
     }
 
-    buf[len - 1] = '\0'; /* clear newline */
+    /* clear any newlines */
+    buf[len--] = '\0';
+    while (buf[len] == '\n')
+        buf[len--] = '\0';
     return buf;
 }

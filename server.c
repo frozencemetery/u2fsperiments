@@ -95,9 +95,6 @@ static int verify_reg(fido_cred_t *cred) {
     if (ret != FIDO_OK)
         goto done;
 
-    fprintf(stderr, "%s %s %s %s\n", fido_cred_fmt(cred), cert_64,
-            authdata_64, sig_64);
-
     ret = fido_cred_verify(cred);
     if (ret != FIDO_OK)
         goto done;
