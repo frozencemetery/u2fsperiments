@@ -17,4 +17,4 @@ client: client.c common.o base64.o
 	$(CC) $(CFLAGS) $(LDFLAGS) $(fido2) -o client client.c common.o base64.o
 
 server: server.c base64.o common.o
-	$(CC) $(CFLAGS) $(LDFLAGS) -o server server.c base64.o common.o
+	$(CC) $(CFLAGS) $(LDFLAGS) $(fido2) -o server server.c base64.o common.o

@@ -63,8 +63,11 @@ done:
 
 static int chal(fido_dev_t *dev) {
     fido_cred_t *cred = NULL;
-    char *chal_64 = NULL;
+    char *chal_64 = NULL, *cert_64 = NULL, *authdata_64 = NULL,
+        *sig_64 = NULL;
     unsigned char *chal_dec = NULL;
+    const unsigned char *cert, *authdata, *sig;
+    char *reply = NULL;
     size_t len_out;
     int ret = 0;
 
@@ -100,7 +103,36 @@ static int chal(fido_dev_t *dev) {
     if (ret != FIDO_OK)
         goto done;
 
+    cert = fido_cred_x5c_ptr(cred);
+    cert_64 = base64_encode(cert, fido_cred_x5c_len(cred));
+    if (!cert_64)
+        goto done;
+
+    authdata = fido_cred_authdata_ptr(cred);
+    authdata_64 = base64_encode(authdata, fido_cred_authdata_len(cred));
+    if (!authdata_64)
+        goto done;
+
+    sig = fido_cred_sig_ptr(cred);
+    sig_64 = base64_encode(sig, fido_cred_sig_len(cred));
+    if (!sig_64)
+        goto done;
+
+    ret = asprintf(&reply, "%s %s %s %s\n",
+                   fido_cred_fmt(cred), cert_64, authdata_64, sig_64);
+    if (ret < 0) {
+        reply = NULL;
+        goto done;
+    }
+
+    put(reply);
+
+    ret = 0;
 done:
+    free(reply);
+    free(sig_64);
+    free(authdata_64);
+    free(cert_64);
     free(chal_64);
     free(chal_dec);
     fido_cred_free(&cred);
@@ -122,7 +154,6 @@ int main() {
     if (ret)
         goto done;
 
-    ret = 0;
 done:
     return ret;
 }
