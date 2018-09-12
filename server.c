@@ -142,17 +142,12 @@ static fido_cred_t *new_cred() {
 
     cred = fido_cred_new();
     if (cred == NULL)
-        goto done;
+        return NULL;
 
     ret = fido_cred_set_rp(cred, ORIGIN, ORIGIN);
     if (ret != FIDO_OK)
-        goto done;
-
-    ret = fido_cred_set_type(cred, COSE_ES256);
-
-done:
-    if (ret != FIDO_OK)
         fido_cred_free(&cred);
+
     return cred;
 }
 
