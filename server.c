@@ -86,6 +86,11 @@ static int verify(fido_cred_t *cred, unsigned char **cert_out,
     if (authdata == NULL || sig == NULL)
         goto done;
 
+    /* Hardcode because not all tokens support RS256. */
+    ret = fido_cred_set_type(cred, COSE_ES256);
+    if (ret != FIDO_OK)
+        goto done;
+
     ret = fido_cred_set_fmt(cred, fmt);
     if (ret != FIDO_OK)
         goto done;

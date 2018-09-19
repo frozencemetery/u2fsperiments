@@ -86,6 +86,7 @@ static int chal(fido_dev_t *dev, bool is_reg) {
     if (cred == NULL)
         goto done;
 
+    /* Hardcode because not all tokens support RS256. */
     ret = fido_cred_set_type(cred, COSE_ES256);
     if (ret != FIDO_OK)
         goto done;
