@@ -43,7 +43,7 @@ static int send_challenge(fido_cred_t *cred) {
 }
 
 /* Registration expects a cert to be supplied in the datastream. */
-static int verify(fido_cred_t *cred, unsigned char **cert_out,
+static int verify_reg(fido_cred_t *cred, unsigned char **cert_out,
                   size_t *cert_len_out) {
     char *blob = NULL;
     char *fmt, *cert_64, *authdata_64, *sig_64;
@@ -132,15 +132,6 @@ done:
     return ret;
 }
 
-static int verify_reg(fido_cred_t *cred, unsigned char **cert_out,
-                      size_t *cert_len_out) {
-    return verify(cred, cert_out, cert_len_out);
-}
-
-static int verify_sig(fido_cred_t *cred) {
-    return verify(cred, NULL, NULL);
-}
-
 static fido_cred_t *new_cred() {
     fido_cred_t *cred;
     int ret;
@@ -173,27 +164,6 @@ int main() {
         goto done;
 
     ret = verify_reg(cred, &cert, &cert_len);
-    if (ret != 0 || cert == NULL)
-        goto done;
-
-    fido_cred_free(&cred);
-    cred = new_cred();
-    if (cred == NULL)
-        goto done;
-
-    ret = send_challenge(cred);
-    if (ret != 0)
-        goto done;
-
-    ret = fido_cred_set_x509(cred, cert, cert_len);
-    if (ret != FIDO_OK)
-        goto done;
-
-    ret = verify_sig(cred);
-    if (ret != 0)
-        goto done;
-
-    ret = 0;
 done:
     free(cert);
     fido_cred_free(&cred);
